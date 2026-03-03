@@ -1,4 +1,5 @@
 using System.Collections;
+using System.Collections.Generic;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
@@ -6,20 +7,20 @@ using UnityEngine.UI;
 public class BreathingMinigame : MonoBehaviour
 {
     [Header("Refs")]
-    [SerializeField] private GameObject panelRoot;          // Monitor UI panel root
-    [SerializeField] private Slider slider;                // Moving indicator (handle)
-    [SerializeField] private RectTransform trackArea;       // Visible bar/slot area
-    [SerializeField] private RectTransform zonesStrip;      // Contains 5 child Images (R,Y,G,Y,R)
+    [SerializeField] private GameObject panelRoot;          // Root object for the breathing minigame UI
+    [SerializeField] private Slider slider;                // Moving indicator (handle/marker)
+    [SerializeField] private RectTransform trackArea;       // The full visible track width (used for converting 0..1 to X position)
+    [SerializeField] private RectTransform zonesStrip;      // Parent that holds 5 zone Images in order: Red, Yellow, Green, Yellow, Red
     [SerializeField] private PressureManager pressureManager;
 
     [Header("UI Text (optional)")]
-    [SerializeField] private TMP_Text resultText;           // text inside minigame (optional)
-    [SerializeField] private TMP_Text usesText;             // text inside minigame (optional)
-    [SerializeField] private TMP_Text nightUsesText;        // text on HUD / always visible (optional)
+    [SerializeField] private TMP_Text resultText;           // Feedback text inside the minigame
+    [SerializeField] private TMP_Text usesText;             // Uses text inside the minigame
+    [SerializeField] private TMP_Text nightUsesText;        // HUD text (if showing uses outside the minigame)
     [SerializeField] private string nightUsesFormat = "Paper Bags: {0}/{1}";
 
     [Header("Timer UI (optional)")]
-    [SerializeField] private Image timerFill;              // Image with Fill Amount (like your call timer)
+    [SerializeField] private Image timerFill;               // Fill Amount image used as a countdown indicator
     [SerializeField, Min(0.5f)] private float timeLimitSeconds = 3.0f;
 
     [Header("Uses")]
@@ -31,10 +32,10 @@ public class BreathingMinigame : MonoBehaviour
     [SerializeField, Min(0.1f)] private float speed = 1.2f;
 
     [Header("Zones Size + Randomization")]
-    [SerializeField, Range(0.05f, 0.9f)] private float stripWidthOfTrack = 0.22f;
-    [SerializeField, Range(0.05f, 0.8f)] private float greenFracOfStrip = 0.25f;
-    [SerializeField, Range(0.05f, 0.45f)] private float yellowFracOfStrip = 0.18f;
-    [SerializeField] private bool randomizeEachOpen = true;
+    [SerializeField, Range(0.05f, 0.9f)] private float stripWidthOfTrack = 0.22f;  // How wide the zone strip is relative to the full track
+    [SerializeField, Range(0.05f, 0.8f)] private float greenFracOfStrip = 0.25f;   // Fraction of the strip that is green
+    [SerializeField, Range(0.05f, 0.45f)] private float yellowFracOfStrip = 0.18f; // Fraction of the strip for each yellow side
+    [SerializeField] private bool randomizeEachOpen = true;                        // If true, the strip slides to a random X each time
 
     private bool _active;
     private bool _locked;
@@ -42,7 +43,7 @@ public class BreathingMinigame : MonoBehaviour
 
     private float _timeRemaining;
 
-    // Cached boundaries in TRACK-LOCAL X coordinates
+    // Cached boundaries in TRACK-LOCAL X coordinates (same space used by markerX)
     private float _greenLeftX, _greenRightX;
     private float _yellowLeft1X, _yellowRight1X;
     private float _yellowLeft2X, _yellowRight2X;
@@ -69,6 +70,7 @@ public class BreathingMinigame : MonoBehaviour
 
     public void Open()
     {
+        // Hard stop if something important wasn't wired up in the Inspector
         if (panelRoot == null || slider == null || trackArea == null || zonesStrip == null || pressureManager == null)
         {
             Debug.LogError("BreathingMinigame: Missing references. Assign panelRoot, slider, trackArea, zonesStrip, pressureManager.");
@@ -78,7 +80,7 @@ public class BreathingMinigame : MonoBehaviour
         if (_active) return;
         if (UsesLeft <= 0) return;
 
-        // Stop any pending close coroutine
+        // Cancel any delayed close that might still be running
         if (_closeRoutine != null) StopCoroutine(_closeRoutine);
         _closeRoutine = null;
 
@@ -86,17 +88,22 @@ public class BreathingMinigame : MonoBehaviour
         _locked = false;
         _t = 0f;
 
-        // Timer
+        // Reset timer
         timeLimitSeconds = Mathf.Max(0.5f, timeLimitSeconds);
         _timeRemaining = timeLimitSeconds;
         UpdateTimerUI();
 
+        // Slider uses 0..1, which later gets converted into an X position on the track
         slider.minValue = 0f;
         slider.maxValue = 1f;
         slider.value = 0f;
 
+        // Layout the 5 zone children based on the configured fractions
         SetupStripChildrenLayout();
+
+        // Move the strip somewhere random and cache the zone bounds for scoring
         if (randomizeEachOpen) RandomizeStripPositionAndCacheBounds();
+        else RandomizeStripPositionAndCacheBounds(); // Still cache bounds even if strip stays centered (keeps one code path)
 
         if (resultText != null) resultText.text = "Press SPACE to breathe";
         RefreshUsesUI();
@@ -107,32 +114,30 @@ public class BreathingMinigame : MonoBehaviour
     private void Update()
     {
         if (!_active) return;
+        if (_locked) return;
 
-        if (!_locked)
+        // Timer countdown
+        _timeRemaining -= Time.deltaTime;
+        UpdateTimerUI();
+
+        // Move marker back and forth
+        _t += Time.deltaTime * speed;
+        slider.value = Mathf.PingPong(_t, 1f);
+
+        // Manual stop
+        if (Input.GetKeyDown(KeyCode.Space))
         {
-            // Timer countdown
-            _timeRemaining -= Time.deltaTime;
-            UpdateTimerUI();
+            _locked = true;
+            ResolveStop(slider.value);
+            return;
+        }
 
-            // Move handle back and forth
-            _t += Time.deltaTime * speed;
-            slider.value = Mathf.PingPong(_t, 1f);
-
-            // Player stop
-            if (Input.GetKeyDown(KeyCode.Space))
-            {
-                _locked = true;
-                ResolveStop(slider.value);
-                return;
-            }
-
-            // Timeout -> auto resolve
-            if (_timeRemaining <= 0f)
-            {
-                _locked = true;
-                ResolveStop(slider.value);
-                return;
-            }
+        // Time-out stop
+        if (_timeRemaining <= 0f)
+        {
+            _locked = true;
+            ResolveStop(slider.value);
+            return;
         }
     }
 
@@ -146,6 +151,7 @@ public class BreathingMinigame : MonoBehaviour
 
     private void ResolveStop(float value01)
     {
+        // Convert slider 0..1 into an X coordinate on the track
         float trackWidth = trackArea.rect.width;
         if (trackWidth <= 0.001f)
         {
@@ -158,20 +164,25 @@ public class BreathingMinigame : MonoBehaviour
         float maxX = trackWidth * 0.5f;
         float markerX = Mathf.Lerp(minX, maxX, Mathf.Clamp01(value01));
 
+        // Score the stop position against cached zone boundaries
         int reduceBy = EvaluateReduction(markerX);
 
-        // Apply relief
+        // Apply relief to pressure
         pressureManager.ReduceTicks(reduceBy);
 
-        // Consume a use
+        // Consume one use
         UsesLeft = Mathf.Max(0, UsesLeft - 1);
         RefreshUsesUI();
 
         if (resultText != null)
-            resultText.text = reduceBy == 3 ? "Perfect breath! (-3)" :
-                              reduceBy == 2 ? "Good breath! (-2)" :
-                                              "Breath caught. (-1)";
+        {
+            resultText.text =
+                reduceBy == 3 ? "Perfect breath! (-3)" :
+                reduceBy == 2 ? "Good breath! (-2)" :
+                                "Breath caught. (-1)";
+        }
 
+        // End timer visually and close after a short delay
         _timeRemaining = 0f;
         UpdateTimerUI();
 
@@ -180,12 +191,15 @@ public class BreathingMinigame : MonoBehaviour
 
     private int EvaluateReduction(float markerX)
     {
+        // Green = best
         if (markerX >= _greenLeftX && markerX <= _greenRightX) return 3;
 
+        // Yellow = medium
         bool inYellow1 = markerX >= _yellowLeft1X && markerX <= _yellowRight1X;
         bool inYellow2 = markerX >= _yellowLeft2X && markerX <= _yellowRight2X;
         if (inYellow1 || inYellow2) return 2;
 
+        // Red/outside = worst
         return 1;
     }
 
@@ -199,8 +213,11 @@ public class BreathingMinigame : MonoBehaviour
 
         float greenF = Mathf.Clamp01(greenFracOfStrip);
         float yellowF = Mathf.Clamp01(yellowFracOfStrip);
+
+        // Whatever is left becomes red, split evenly on both sides
         float redF = (1f - greenF - 2f * yellowF) * 0.5f;
 
+        // Safety clamp so red never collapses to nothing (avoids weird layouts)
         if (redF < 0.02f)
         {
             redF = 0.02f;
@@ -211,6 +228,7 @@ public class BreathingMinigame : MonoBehaviour
             greenF *= scale;
         }
 
+        // Anchor ranges across 0..1 within the strip
         float a0 = 0f;
         float a1 = a0 + redF;
         float a2 = a1 + yellowF;
@@ -218,19 +236,22 @@ public class BreathingMinigame : MonoBehaviour
         float a4 = a3 + yellowF;
         float a5 = 1f;
 
-        SetChildAnchors(zonesStrip.GetChild(0) as RectTransform, a0, a1); // RedL
-        SetChildAnchors(zonesStrip.GetChild(1) as RectTransform, a1, a2); // YellowL
-        SetChildAnchors(zonesStrip.GetChild(2) as RectTransform, a2, a3); // Green
-        SetChildAnchors(zonesStrip.GetChild(3) as RectTransform, a3, a4); // YellowR
-        SetChildAnchors(zonesStrip.GetChild(4) as RectTransform, a4, a5); // RedR
+        SetChildAnchors(zonesStrip.GetChild(0) as RectTransform, a0, a1); // Red (Left)
+        SetChildAnchors(zonesStrip.GetChild(1) as RectTransform, a1, a2); // Yellow (Left)
+        SetChildAnchors(zonesStrip.GetChild(2) as RectTransform, a2, a3); // Green (Center)
+        SetChildAnchors(zonesStrip.GetChild(3) as RectTransform, a3, a4); // Yellow (Right)
+        SetChildAnchors(zonesStrip.GetChild(4) as RectTransform, a4, a5); // Red (Right)
     }
 
     private void SetChildAnchors(RectTransform rt, float minX, float maxX)
     {
         if (rt == null) return;
 
+        // Anchors define the portion of the strip each zone occupies
         rt.anchorMin = new Vector2(minX, 0f);
         rt.anchorMax = new Vector2(maxX, 1f);
+
+        // Keep zones flush with the strip bounds
         rt.pivot = new Vector2(0.5f, 0.5f);
         rt.anchoredPosition = Vector2.zero;
         rt.offsetMin = Vector2.zero;
@@ -247,6 +268,7 @@ public class BreathingMinigame : MonoBehaviour
             return;
         }
 
+        // Strip uses centered anchors so it can slide horizontally within the track
         zonesStrip.pivot = new Vector2(0.5f, 0.5f);
         zonesStrip.anchorMin = new Vector2(0.5f, 0.5f);
         zonesStrip.anchorMax = new Vector2(0.5f, 0.5f);
@@ -256,12 +278,14 @@ public class BreathingMinigame : MonoBehaviour
         zonesStrip.SetSizeWithCurrentAnchors(RectTransform.Axis.Horizontal, stripWidth);
         zonesStrip.SetSizeWithCurrentAnchors(RectTransform.Axis.Vertical, trackArea.rect.height);
 
+        // Pick a random center X that keeps the strip fully inside the track
         float minCenterX = -trackWidth * 0.5f + stripWidth * 0.5f;
         float maxCenterX = trackWidth * 0.5f - stripWidth * 0.5f;
         float centerX = Random.Range(minCenterX, maxCenterX);
 
         zonesStrip.anchoredPosition = new Vector2(centerX, 0f);
 
+        // Rebuild the same fractions used for layout so the cached bounds match the visuals
         float greenF = Mathf.Clamp01(greenFracOfStrip);
         float yellowF = Mathf.Clamp01(yellowFracOfStrip);
         float redF = (1f - greenF - 2f * yellowF) * 0.5f;
@@ -276,12 +300,15 @@ public class BreathingMinigame : MonoBehaviour
             greenF *= scale;
         }
 
+        // Strip-left in track-local X
         float stripLeftX = centerX - stripWidth * 0.5f;
 
+        // Widths in pixels
         float redW = stripWidth * redF;
         float yellowW = stripWidth * yellowF;
         float greenW = stripWidth * greenF;
 
+        // Cache yellow + green boundaries in track-local X
         _yellowLeft1X = stripLeftX + redW;
         _yellowRight1X = _yellowLeft1X + yellowW;
 

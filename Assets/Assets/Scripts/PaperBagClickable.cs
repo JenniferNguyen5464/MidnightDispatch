@@ -1,73 +1,78 @@
+using System.Collections;
+using System.Collections.Generic;
 using UnityEngine;
 
 [RequireComponent(typeof(Collider))]
 public class PaperBagClickable : MonoBehaviour
 {
-    [Header("References (drag these in)")]
-    [SerializeField] private CallManager callManager;
-    [SerializeField] private PressureManager pressureManager;
-    [SerializeField] private BreathingMinigame breathingMinigame;
+    [Header("References")]
+    [SerializeField] private CallManager callManager;               // Assigned in Inspector
+    [SerializeField] private PressureManager pressureManager;       // Assigned in Inspector
+    [SerializeField] private BreathingMinigame breathingMinigame;   // Assigned in Inspector
 
     [Header("Debug")]
-    [SerializeField] private bool logDebug = true;
+    [SerializeField] private bool logDebug = true;                 // Toggle console logs
 
     private void OnMouseDown()
     {
+        // Safety checks so this doesn't silently fail if something wasn't wired up
         if (callManager == null)
         {
-            if (logDebug) Debug.LogWarning("PaperBagClickable: callManager is NOT assigned.");
+            if (logDebug) Debug.LogWarning("PaperBagClickable: CallManager reference missing.");
             return;
         }
+
         if (pressureManager == null)
         {
-            if (logDebug) Debug.LogWarning("PaperBagClickable: pressureManager is NOT assigned.");
+            if (logDebug) Debug.LogWarning("PaperBagClickable: PressureManager reference missing.");
             return;
         }
+
         if (breathingMinigame == null)
         {
-            if (logDebug) Debug.LogWarning("PaperBagClickable: breathingMinigame is NOT assigned.");
+            if (logDebug) Debug.LogWarning("PaperBagClickable: BreathingMinigame reference missing.");
             return;
         }
 
-        // Only during cooldown
+        // Paper bag is only usable during the cooldown window between calls
         if (!callManager.IsCooldown)
         {
-            if (logDebug) Debug.Log("PaperBagClickable: Not in cooldown, bag disabled.");
+            if (logDebug) Debug.Log("PaperBagClickable: Not in cooldown. Bag disabled.");
             return;
         }
 
-        //NEW: only once per cooldown
+        // Only allow one use per cooldown window (prevents spam between calls)
         if (callManager.BagUsedThisCooldown)
         {
-            if (logDebug) Debug.Log("PaperBagClickable: Already used bag this cooldown.");
+            if (logDebug) Debug.Log("PaperBagClickable: Bag already used during this cooldown.");
             return;
         }
 
-        // Disabled if pressure is 0
+        // No reason to use it if pressure is already at 0
         if (pressureManager.CurrentTicks <= 0)
         {
-            if (logDebug) Debug.Log("PaperBagClickable: Pressure is 0, bag disabled.");
+            if (logDebug) Debug.Log("PaperBagClickable: Pressure is 0. Bag disabled.");
             return;
         }
 
-        // Uses limit per night
+        // Enforce per-night uses limit (tracked by the minigame)
         if (!breathingMinigame.HasUsesLeft())
         {
-            if (logDebug) Debug.Log("PaperBagClickable: No uses left.");
+            if (logDebug) Debug.Log("PaperBagClickable: No uses left for the night.");
             return;
         }
 
-        // Already open
+        // Prevent opening the minigame twice
         if (breathingMinigame.IsActive)
         {
             if (logDebug) Debug.Log("PaperBagClickable: Minigame already active.");
             return;
         }
 
-        //Consume the cooldown-use immediately (prevents re-open spam)
+        // Lock the cooldown use immediately so repeated clicks can't reopen it
         callManager.MarkBagUsedThisCooldown();
 
-        // Open minigame
+        // Open the breathing minigame UI
         breathingMinigame.Open();
     }
 }

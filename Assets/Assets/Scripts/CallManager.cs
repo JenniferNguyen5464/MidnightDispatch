@@ -6,6 +6,11 @@ using UnityEngine.UI;
 
 public class CallManager : MonoBehaviour
 {
+    // Ringing  = phone is waiting to be picked up
+    // Typing   = transcript is being typed out
+    // Decision = player must choose a dispatch service before the timer runs out
+    // Cooldown = downtime between calls (paper bag can be used here)
+    // NightEnd = night finished OR game over
     private enum State { Ringing, Typing, Decision, Cooldown, NightEnd }
 
     [Header("Data")]
@@ -14,15 +19,15 @@ public class CallManager : MonoBehaviour
     [Header("UI - Call")]
     [SerializeField] private TMP_Text _transcriptText;
     [SerializeField] private TMP_Text _statusText;
-    [SerializeField] private Image _timerFill; // Call decision timer fill
+    [SerializeField] private Image _timerFill; // Decision timer (fill amount)
     [SerializeField] private Button _policeButton;
     [SerializeField] private Button _fireButton;
     [SerializeField] private Button _ambulanceButton;
     [SerializeField] private GameOverUI _gameOverUI;
 
-    [Header("UI - Cooldown Timer (NEW)")]
-    [SerializeField] private Image _cooldownFill;          // set Image Type = Filled
-    [SerializeField] private TMP_Text _cooldownText;       // optional (e.g., "Next call: 3.2s")
+    [Header("UI - Cooldown Timer")]
+    [SerializeField] private Image _cooldownFill;          // Image Type should be "Filled"
+    [SerializeField] private TMP_Text _cooldownText;       // Optional: "Next call: 3.2s"
     [SerializeField] private string _cooldownTextFormat = "Next call: {0:0.0}s";
 
     [Header("Systems")]
@@ -40,15 +45,16 @@ public class CallManager : MonoBehaviour
     private List<CallData> _sequence;
     private int _index = -1;
     private CallData _current;
+
     private bool _choiceMade;
     private DispatchService _chosenService;
 
     public bool IsCooldown => _state == State.Cooldown;
 
-    // Only allow bag once per cooldown
+    // Used to prevent spamming the paper bag during a single cooldown window
     public bool BagUsedThisCooldown { get; private set; } = false;
 
-    // Called by PaperBagClickable right before opening the minigame
+    // PaperBagClickable calls this right before opening the breathing minigame
     public void MarkBagUsedThisCooldown()
     {
         BagUsedThisCooldown = true;
@@ -67,6 +73,7 @@ public class CallManager : MonoBehaviour
 
     private void Start()
     {
+        // Basic validation so the night doesn't silently fail
         if (_nightData == null)
         {
             Debug.LogError("CallManager: NightData is not assigned.");
@@ -81,6 +88,7 @@ public class CallManager : MonoBehaviour
             return;
         }
 
+        // Night setup
         if (_pressureManager != null)
             _pressureManager.ResetPressure();
 
@@ -93,6 +101,7 @@ public class CallManager : MonoBehaviour
 
     private void BuildNightSequence_NoRepeats()
     {
+        // Copies the call pool, optionally shuffles, then takes the first N calls
         List<CallData> pool = new List<CallData>(_nightData.callPool);
 
         if (_nightData.randomizeSelection)
@@ -122,9 +131,11 @@ public class CallManager : MonoBehaviour
     {
         _index++;
 
+        // End the night when there are no calls left
         if (_index >= _sequence.Count)
         {
             _state = State.NightEnd;
+
             if (_statusText != null) _statusText.text = "Night Complete!";
             if (_transcriptText != null) _transcriptText.text = "";
 
@@ -147,11 +158,14 @@ public class CallManager : MonoBehaviour
 
     private IEnumerator RunCallRoutine()
     {
-        // Typing phase
+        // -------------------------
+        // Typing phase (transcript)
+        // -------------------------
         _state = State.Typing;
         SetCooldownUIActive(false);
 
-        if (_statusText != null) _statusText.text = $"Call {_index + 1}/{_sequence.Count}";
+        if (_statusText != null)
+            _statusText.text = $"Call {_index + 1}/{_sequence.Count}";
 
         if (_typewriter != null)
         {
@@ -166,7 +180,9 @@ public class CallManager : MonoBehaviour
             if (_transcriptText != null) _transcriptText.text = _current.transcript;
         }
 
-        // Decision phase
+        // -------------------------
+        // Decision phase (buttons)
+        // -------------------------
         _state = State.Decision;
         SetCooldownUIActive(false);
 
@@ -187,9 +203,12 @@ public class CallManager : MonoBehaviour
         SetButtons(false);
         SetCallTimerFill(0f);
 
-        // Resolve result
+        // -------------------------
+        // Result + pressure update
+        // -------------------------
         if (!_choiceMade)
         {
+            // Timeout counts as a mistake
             if (_statusText != null) _statusText.text = "Missed call (timeout)!";
 
             if (RegisterMistakeAndCheckGameOver())
@@ -213,21 +232,22 @@ public class CallManager : MonoBehaviour
                 _transcriptText.text = "";
         }
 
+        // Short pause so the result message is readable
         yield return new WaitForSeconds(_feedbackSeconds);
 
-        // ============================
-        // FIX: If that was the LAST call, end night immediately (NO cooldown).
-        // ============================
+        // If this was the last call, end the night immediately (no cooldown screen)
         if (_sequence != null && _index >= _sequence.Count - 1)
         {
             SetCooldownUIActive(false);
-            NextCall();     // increments index and hits NightEnd branch
+            NextCall(); // increments index and hits the NightEnd branch
             yield break;
         }
 
-        // Cooldown phase (bag is usable here)
+        // -------------------------
+        // Cooldown phase
+        // -------------------------
         _state = State.Cooldown;
-        BagUsedThisCooldown = false; // reset each cooldown
+        BagUsedThisCooldown = false;
 
         if (_statusText != null) _statusText.text = "Waiting for next call...";
 
@@ -239,10 +259,10 @@ public class CallManager : MonoBehaviour
 
         while (remaining > 0f)
         {
-            // Pause cooldown timer while breathing minigame is open
+            // Cooldown timer pauses while the breathing minigame is open
             if (_breathingMinigame != null && _breathingMinigame.IsActive)
             {
-                UpdateCooldownUI(remaining, total); // keep UI frozen at current value
+                UpdateCooldownUI(remaining, total);
                 yield return null;
                 continue;
             }
@@ -265,6 +285,7 @@ public class CallManager : MonoBehaviour
         _chosenService = service;
         _choiceMade = true;
 
+        // Transcript clears once a service is selected
         if (_transcriptText != null)
             _transcriptText.text = "";
     }
@@ -299,9 +320,9 @@ public class CallManager : MonoBehaviour
             _cooldownText.text = string.Format(_cooldownTextFormat, remaining);
     }
 
-    // =========================
-    // GAME OVER HELPERS
-    // =========================
+    // -------------------------
+    // Game over helpers
+    // -------------------------
     private bool RegisterMistakeAndCheckGameOver()
     {
         if (_pressureManager == null) return false;
