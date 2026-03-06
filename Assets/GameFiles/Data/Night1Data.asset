@@ -1,0 +1,32 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 69345166f5c513e4b80ec44039471930, type: 3}
+  m_Name: Night1Data
+  m_EditorClassIdentifier: 
+  callPool:
+  - {fileID: 11400000, guid: 41c31c11bd3f1f443b35c873043d8126, type: 2}
+  - {fileID: 11400000, guid: 86e8e347d01b39c48aa331a39395be29, type: 2}
+  - {fileID: 11400000, guid: 34c3117dcff56a74f8ca082ce816cc2e, type: 2}
+  - {fileID: 11400000, guid: 6a3285103a449004199379eb0ba08235, type: 2}
+  - {fileID: 11400000, guid: 50305fce87611e647b453ffb38301631, type: 2}
+  - {fileID: 11400000, guid: fabd5d85ab5a66e4bbe018e4fe4085e9, type: 2}
+  - {fileID: 11400000, guid: c047721aa4bb71147b74103e2c3b3070, type: 2}
+  - {fileID: 11400000, guid: 451565f14b3ee2049ab87946b23384ed, type: 2}
+  - {fileID: 11400000, guid: 5a0c0966db557404eba86a854b060a69, type: 2}
+  - {fileID: 11400000, guid: 34cf096b1390bd74da9e05c6a93d2ecb, type: 2}
+  - {fileID: 11400000, guid: 1e065976913b55941bdef585f66cfc78, type: 2}
+  - {fileID: 11400000, guid: ae774e1df0baa894b88dcc556118e818, type: 2}
+  - {fileID: 11400000, guid: 5ec93d4b896ea224aa0963c455fd19ff, type: 2}
+  - {fileID: 11400000, guid: cf0d016d56f79c340ad39f6086d1effa, type: 2}
+  - {fileID: 11400000, guid: b0e0cecc61387a94fa84bacbe687f68e, type: 2}
+  callsPerNight: 15
+  randomizeSelection: 0
